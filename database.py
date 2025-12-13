@@ -1,4 +1,4 @@
-# database.py (UPDATED & COMPLETE)
+# database.py (UPDATED)
 import sqlite3
 import pandas as pd
 from datetime import datetime
@@ -22,7 +22,7 @@ def init_db():
         notes TEXT
     )''')
     
-    # Table: Session Plans (from views/planner.py - based on Daily Session Plan.csv)
+    # Table: Session Plans (from views/planner.py)
     c.execute('''CREATE TABLE IF NOT EXISTS session_plans (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         date TEXT,
@@ -36,6 +36,25 @@ def init_db():
         materials_needed TEXT,
         internal_notes TEXT
     )''')
+    
+    # Table: Children Profiles (NEW - to link to parents)
+    c.execute('''CREATE TABLE IF NOT EXISTS children (
+        child_id INTEGER PRIMARY KEY AUTOINCREMENT,
+        child_name TEXT UNIQUE,
+        date_of_birth TEXT,
+        primary_diagnosis TEXT,
+        parent_contact TEXT
+    )''')
+    
+    # --- Initial Data Load (Optional: to populate a child for testing parent login) ---
+    try:
+        c.execute("INSERT OR IGNORE INTO children (child_name, date_of_birth, primary_diagnosis, parent_contact) VALUES (?, ?, ?, ?)",
+                  ("Tony Smith", "2020-05-15", "Autism Spectrum Disorder", "parent_tony@email.com"))
+        c.execute("INSERT OR IGNORE INTO children (child_name, date_of_birth, primary_diagnosis, parent_contact) VALUES (?, ?, ?, ?)",
+                  ("Sara Jones", "2019-11-20", "Developmental Delay", "parent_sara@email.com"))
+    except:
+        # Ignore errors if tables are locked or non-existent (shouldn't happen here)
+        pass
     
     conn.commit()
     conn.close()
