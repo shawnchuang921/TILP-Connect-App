@@ -1,7 +1,7 @@
-# views/planner.py
+# views/planner.py (UPDATED)
 import streamlit as st
 from datetime import date
-from database import save_plan # We will create this function below
+from database import save_plan, get_data # Import get_data
 
 def show_page():
     st.header("📅 Daily Session Plan")
@@ -73,3 +73,26 @@ def show_page():
                 internal_notes
             )
             st.success(f"Daily Session Plan for {plan_date.isoformat()} finalized by {session_lead}!")
+
+    st.divider()
+    
+    # --- Session Plan View and Export ---
+    st.subheader("🗓️ All Daily Plans")
+    
+    try:
+        df_plans = get_data("session_plans")
+        st.dataframe(df_plans.sort_values(by="date", ascending=False), use_container_width=True)
+        
+        # 2. Export function
+        if not df_plans.empty:
+            csv_export = df_plans.to_csv(index=False).encode('utf-8')
+            st.download_button(
+                label="📥 Export Session Plans to CSV",
+                data=csv_export,
+                file_name=f'TILP_Session_Plans_{date.today().isoformat()}.csv',
+                mime='text/csv',
+                help="Download all session plan data as a CSV file."
+            )
+        
+    except Exception as e:
+        st.warning(f"No session plans saved yet or error loading data: {e}")
