@@ -1,8 +1,8 @@
 # app.py (UPDATED)
 import streamlit as st
-from database import init_db
-# Assuming views/tracker.py and views/dashboard.py exist in your setup
-from views import tracker, planner, dashboard 
+from database import init_db, get_user
+# Import the new admin tools page
+from views import tracker, planner, dashboard, admin_tools 
 
 # Initialize Database
 init_db()
@@ -10,22 +10,7 @@ init_db()
 # Page Configuration
 st.set_page_config(page_title="TILP Connect", layout="wide", page_icon="🧩")
 
-# --- ENHANCED AUTHENTICATION & PROFILES ---
-# Maps login_id to (password, role, child_link)
-# child_link is used for parents to filter the data they see.
-USERS = {
-    # Login ID    : (Password, Role, Child Name/Group)
-    "adminuser": ("admin123", "admin", "All"),
-    "lead_ot": ("ot123", "OT", "All"),
-    "slp_staff": ("slp123", "SLP", "All"),
-    "ece_lead": ("ece123", "ECE", "All"),
-    "assistant": ("staff123", "Assistant", "All"),
-    
-    # Parent Logins - Linked to a specific child's name
-    "parent_tony": ("tonypass", "parent", "Tony Smith"),
-    "parent_sara": ("sarapass", "parent", "Sara Jones")
-}
-
+# --- DATABASE AUTHENTICATION ---
 def login_screen():
     st.title("🔐 TILP Connect Login")
     
@@ -35,11 +20,14 @@ def login_screen():
         password = st.text_input("Password", type="password")
         
         if st.button("Log In"):
-            if username in USERS and USERS[username][0] == password:
+            user_data = get_user(username, password)
+            
+            if user_data:
                 st.session_state["logged_in"] = True
-                st.session_state["user_role"] = USERS[username][1] # e.g., 'admin', 'parent'
-                st.session_state["child_link"] = USERS[username][2] # e.g., 'Tony Smith', 'All'
-                st.session_state["username"] = username # Store the login ID
+                st.session_state["user_role"] = user_data["role"]
+                st.session_state["username"] = user_data["username"]
+                # Store the child link for parent filtering
+                st.session_state["child_link"] = user_data["child_link"]
                 st.rerun()
             else:
                 st.error("Incorrect username or password")
@@ -62,15 +50,19 @@ def main():
     # Define available pages based on Role
     pages = {}
     
+    # Admin has all permissions
+    if user_role == "admin":
+        pages["🔑 Admin Tools"] = admin_tools.show_page # NEW ADMIN PAGE
+    
     # Staff/Therapists/Admin roles
-    if user_role in ["admin", "OT", "SLP", "ECE", "Assistant"]:
+    if user_role in ["admin", "OT", "SLP", "ECE", "Assistant", "staff"]:
         pages["📝 Progress Tracker"] = tracker.show_page
         pages["📅 Daily Planner"] = planner.show_page
     
-    # Everyone (including parents) can see the dashboard
-    # Note: dashboard.py will need to use st.session_state["child_link"] to filter the view for parents.
+    # Dashboard view changes based on role
     if user_role == "parent":
-        pages[f"📊 Dashboard: {st.session_state['child_link']}"] = dashboard.show_page
+        child_name = st.session_state.get("child_link", "My Child")
+        pages[f"📊 My Child's Dashboard"] = dashboard.show_page
     else:
         pages["📊 Dashboard & Reports"] = dashboard.show_page
 
