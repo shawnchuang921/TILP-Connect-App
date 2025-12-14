@@ -1,6 +1,6 @@
-# app.py (UPDATED)
 import streamlit as st
-from database import init_db, get_user
+# UPDATED: Database functions are now imported from the new location (assuming you move database.py to the views folder)
+from views.database import init_db, get_user
 # Import the new admin tools page
 from views import tracker, planner, dashboard, admin_tools 
 
@@ -52,10 +52,10 @@ def main():
     
     # Admin has all permissions
     if user_role == "admin":
-        pages["🔑 Admin Tools"] = admin_tools.show_page # NEW ADMIN PAGE
+        pages["🔑 Admin Tools"] = admin_tools.show_page
     
     # Staff/Therapists/Admin roles
-    if user_role in ["admin", "OT", "SLP", "ECE", "Assistant", "staff"]:
+    if user_role in ["admin", "OT", "SLP", "BC", "ECE", "Assistant", "staff"]:
         pages["📝 Progress Tracker"] = tracker.show_page
         pages["📅 Daily Planner"] = planner.show_page
     
