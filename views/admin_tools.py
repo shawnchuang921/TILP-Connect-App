@@ -1,14 +1,15 @@
 # views/admin_tools.py (NEW FILE)
 import streamlit as st
+# The import must be relative, assuming database.py is now also in the 'views' folder
 from database import get_list_data, upsert_user, delete_user, upsert_child, delete_child, upsert_list_item, delete_list_item
 import pandas as pd
+from datetime import date
 
 def show_page():
     # Only Admin should see this page, checked in app.py
     st.title("🔑 Admin Management Tools")
     st.info("Manage User Accounts, Child Profiles, and Custom List Options.")
 
-    # Main Tabs for Organization
     tab1, tab2, tab3 = st.tabs(["👤 User Accounts", "👨‍👩‍👧‍👦 Child Profiles", "📝 Custom Lists"])
 
     # --- TAB 1: USER ACCOUNTS (Request 2) ---
@@ -17,39 +18,72 @@ def show_page():
         df_users = get_list_data("users")
         st.dataframe(df_users, use_container_width=True)
 
-        with st.expander("➕ Add / Edit User"):
+        with st.form("user_form"):
+            st.subheader("Add / Edit / Delete User")
             col1, col2 = st.columns(2)
-            username = col1.text_input("Username (must be unique)", key="user_name_input")
-            password = col2.text_input("Password", type="password", key="user_pass_input")
+            username = col1.text_input("Username (must be unique)", help="Used as the Login ID")
+            password = col2.text_input("Password (Leave blank to keep existing password for edit)", type="password")
             
             col3, col4 = st.columns(2)
-            role = col3.selectbox("Role", ["admin", "OT", "SLP", "ECE", "Assistant", "parent"], key="user_role_select")
+            role = col3.selectbox("Role", ["admin", "OT", "SLP", "BC", "ECE", "Assistant", "parent"])
             
-            # Child Link is only relevant for parents
             child_link = "All"
+            
+            # Parent Link logic
             if role == "parent":
-                # Get list of unassigned children or current child
                 children_df = get_list_data("children")
-                available_children = ["None"] + children_df["child_name"].tolist()
-                child_link = col4.selectbox("Link to Child (for Parents)", available_children, key="user_child_link")
+                # Filter children not currently assigned to a parent or already assigned to this username
+                assigned_children = children_df[
+                    (children_df["parent_username"] == "None") | 
+                    (children_df["parent_username"] == username)
+                ]["child_name"].tolist()
+                
+                # Add the child they are already linked to, if any
+                current_link = df_users[df_users['username'] == username]['child_link'].iloc[0] if username in df_users['username'].values and df_users[df_users['username'] == username]['child_link'].iloc[0] != 'All' else 'None'
+                
+                available_children = ["None"] + sorted(list(set(assigned_children)))
+
+                # If the user is editing an existing parent, ensure their current child is selected by default
+                default_index = available_children.index(current_link) if current_link in available_children else 0
+                
+                child_link = col4.selectbox("Link to Child (for Parents)", available_children, index=default_index)
             else:
                 col4.write("Child Link: All (Staff Role)")
             
-            if st.button("Save User Account", key="save_user_btn"):
-                if username and password:
-                    # For staff, child_link remains 'All'
+            col5, col6 = st.columns(2)
+
+            if col5.form_submit_button("💾 Save User Account"):
+                if username:
+                    # If editing, we try to grab the old user record to keep the password if not provided
+                    old_user = df_users[df_users['username'] == username]
+                    current_password = old_user['password'].iloc[0] if not old_user.empty else None
+                    
+                    final_password = password if password else current_password
                     final_child_link = child_link if role == "parent" and child_link != "None" else "All"
-                    upsert_user(username, password, role, final_child_link)
+                    
+                    upsert_user(username, final_password, role, final_child_link)
+                    
+                    # Update child's parent_username in children table if linked
+                    if final_child_link != "All":
+                        upsert_child(final_child_link, username)
+
                     st.success(f"User '{username}' ({role}) saved successfully.")
                     st.rerun()
                 else:
-                    st.error("Username and Password are required.")
+                    st.error("Username is required.")
             
-            if st.button("Delete User", key="delete_user_btn"):
-                if username:
+            if col6.form_submit_button("🗑️ Delete User"):
+                if username and username != st.session_state["username"]: # Prevent deleting logged-in user
+                    # Unlink child before deleting user
+                    current_link = df_users[df_users['username'] == username]['child_link'].iloc[0] if username in df_users['username'].values else 'All'
+                    if current_link != 'All':
+                        upsert_child(current_link, "None")
+                        
                     delete_user(username)
                     st.warning(f"User '{username}' deleted.")
                     st.rerun()
+                else:
+                    st.error("Cannot delete yourself or username is blank.")
 
     # --- TAB 2: CHILD PROFILES (Request 1) ---
     with tab2:
@@ -57,25 +91,41 @@ def show_page():
         df_children = get_list_data("children")
         st.dataframe(df_children, use_container_width=True)
 
-        with st.expander("➕ Add / Edit Child Profile"):
+        with st.form("child_form"):
+            st.subheader("Add / Edit / Delete Child Profile")
             col1, col2 = st.columns(2)
-            child_name = col1.text_input("Child Name (ID)", key="child_name_input")
-            dob = col2.date_input("Date of Birth (Optional)", key="child_dob_input")
             
-            # Get list of users with role 'parent'
+            child_name = col1.text_input("Child Name (ID)", help="Must be unique.")
+            # Default to today, or the existing DOB if editing
+            existing_dob = df_children[df_children['child_name'] == child_name]['date_of_birth'].iloc[0] if child_name in df_children['child_name'].values else date.today().isoformat()
+            dob = col2.date_input("Date of Birth (Optional)", value=pd.to_datetime(existing_dob) if pd.notna(existing_dob) else date.today())
+            
+            # Get list of users with role 'parent' and ensure they are unassigned
             parent_df = df_users[df_users["role"] == "parent"]
-            parent_list = ["None/Unassigned"] + parent_df["username"].tolist()
+            unassigned_parents = parent_df[parent_df["child_link"].isin(["All", "None"])]["username"].tolist()
             
-            parent_link = st.selectbox("Assign Parent Login ID", parent_list, key="parent_assign_select")
+            # Find current assigned parent
+            current_parent = df_children[df_children['child_name'] == child_name]['parent_username'].iloc[0] if child_name in df_children['child_name'].values else 'None/Unassigned'
 
-            if st.button("Save Child Profile", key="save_child_btn"):
+            # Combine current parent with unassigned parents for the list
+            parent_list = ["None/Unassigned"] + sorted(list(set(unassigned_parents + [current_parent])))
+            
+            default_index = parent_list.index(current_parent) if current_parent in parent_list else 0
+            parent_link = st.selectbox("Assign Parent Login ID", parent_list, index=default_index)
+            
+            col3, col4 = st.columns(2)
+            
+            if col3.form_submit_button("💾 Save Child Profile"):
                 if child_name:
                     final_parent = parent_link if parent_link != "None/Unassigned" else "None"
+                    
+                    # 1. Update/Insert Child record
                     upsert_child(child_name, final_parent, dob.isoformat())
                     
-                    # Update the parent's child_link in the users table
+                    # 2. Update the newly assigned parent's user record (if one was selected)
                     if final_parent != "None":
-                        upsert_user(final_parent, None, "parent", child_name) # Password is not needed for update
+                        # We don't change the password here, just the link
+                        upsert_user(final_parent, None, "parent", child_name) 
                         st.success(f"Child '{child_name}' saved and linked to parent '{final_parent}'.")
                     else:
                          st.success(f"Child '{child_name}' saved (no parent assigned).")
@@ -83,7 +133,7 @@ def show_page():
                 else:
                     st.error("Child Name is required.")
                     
-            if st.button("Delete Child", key="delete_child_btn"):
+            if col4.form_submit_button("🗑️ Delete Child"):
                 if child_name:
                     delete_child(child_name)
                     st.warning(f"Child '{child_name}' deleted. Parent link removed.")
@@ -101,15 +151,16 @@ def show_page():
             df_d = get_list_data("disciplines")
             st.dataframe(df_d, use_container_width=True)
             
-            d_name = st.text_input("Add/Delete Discipline Name", key="d_name_input")
+            d_name = st.text_input("Discipline Name (Add/Delete)")
+            col_d1, col_d2 = st.columns(2)
             
-            if st.button("Add Discipline", key="add_d_btn"):
+            if col_d1.button("➕ Add Discipline"):
                 if d_name:
                     upsert_list_item("disciplines", d_name)
                     st.success(f"Discipline '{d_name}' added.")
                     st.rerun()
             
-            if st.button("Delete Discipline", key="delete_d_btn"):
+            if col_d2.button("🗑️ Delete Discipline"):
                 if d_name:
                     delete_list_item("disciplines", d_name)
                     st.warning(f"Discipline '{d_name}' deleted.")
@@ -121,15 +172,16 @@ def show_page():
             df_g = get_list_data("goal_areas")
             st.dataframe(df_g, use_container_width=True)
             
-            g_name = st.text_input("Add/Delete Goal Area Name", key="g_name_input")
-            
-            if st.button("Add Goal Area", key="add_g_btn"):
+            g_name = st.text_input("Goal Area Name (Add/Delete)")
+            col_g1, col_g2 = st.columns(2)
+
+            if col_g1.button("➕ Add Goal Area"):
                 if g_name:
                     upsert_list_item("goal_areas", g_name)
                     st.success(f"Goal Area '{g_name}' added.")
                     st.rerun()
                     
-            if st.button("Delete Goal Area", key="delete_g_btn"):
+            if col_g2.button("🗑️ Delete Goal Area"):
                 if g_name:
                     delete_list_item("goal_areas", g_name)
                     st.warning(f"Goal Area '{g_name}' deleted.")
