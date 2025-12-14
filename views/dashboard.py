@@ -2,8 +2,8 @@
 import streamlit as st
 import plotly.express as px
 import pandas as pd
-from database import get_data
-import os # To check if media file exists
+from database import get_data # Simple import works since database.py is now in 'views'
+import os 
 
 def show_page():
     # Retrieve the child filter from the session state (set in app.py during login)
@@ -21,7 +21,7 @@ def show_page():
     try:
         df = get_data("progress")
     except Exception as e:
-        st.error(f"Error loading progress data. Check 'database.py'. Error: {e}")
+        st.error(f"Error loading progress data. Error: {e}")
         return
 
     if df.empty:
@@ -30,12 +30,14 @@ def show_page():
 
     # --- Filtering Logic ---
     if child_filter != "All":
+        # Parent View: Filter data for their specific child
         df_display = df[df["child_name"] == child_filter].copy()
         if df_display.empty:
             st.warning(f"No progress data found for {child_filter}.")
             return
         selected_child = child_filter
     else:
+        # Staff/Admin View: Selectbox Filter
         df_display = df.copy() 
         with st.expander("🔎 Filter Data", expanded=True):
             child_list = ["All Children"] + sorted(df_display["child_name"].unique().tolist())
@@ -49,18 +51,14 @@ def show_page():
             return
 
     # --- Display Metrics and Charts ---
-    # ... (Metrics and Charts code from your original dashboard.py goes here) ...
-    # I am keeping your original chart logic, but ensure df_display is used.
-
+    
     st.divider()
     
-    # Title for the metrics
     if selected_child == "All Children":
         st.subheader("Program-Wide Metrics")
     else:
         st.subheader(f"Key Progress Metrics for {selected_child}")
         
-    # METRICS
     m1, m2, m3 = st.columns(3)
     
     m1.metric("Total Sessions Logged", len(df_display))
@@ -73,7 +71,6 @@ def show_page():
     # CHARTS
     st.divider()
     
-    # Progress Trends Chart
     st.subheader(f"Goal Achievement Trend")
     
     status_map = {"Regression": 1, "Stable": 2, "Progress": 3}
@@ -95,19 +92,17 @@ def show_page():
     # --- Recent Notes and Media Display ---
     st.subheader("Recent Notes & Media")
     
-    # Display the filtered data and media in a cleaner way
-    for index, row in df_display.sort_values(by="date", ascending=False).iterrows():
-        st.markdown(f"**Date:** {row['date']} | **Discipline:** {row['discipline']} | **Goal:** {row['goal_area']} | **Status:** **{row['status']}**")
+    # Iterate through the filtered data and display notes/media
+    for index, row in df_display.sort_values(by="date", ascending=False).head(50).iterrows():
+        st.markdown(f"**{row['date']}** | **{row['discipline']}** | **Goal:** {row['goal_area']} | **Status:** **{row['status']}**")
         st.markdown(f"**Notes:** {row['notes']}")
         
-        if row['media_path'] and os.path.exists(row['media_path']):
+        if pd.notna(row['media_path']) and row['media_path'] and os.path.exists(row['media_path']):
             file_path = row['media_path']
+            # Get the file extension to determine the type
             mime_type = os.path.splitext(file_path)[1].lower()
             
-            # Parent/Staff View Media
-            col_media, _ = st.columns([1, 2])
-            with col_media:
-                st.markdown("---")
+            with st.expander(f"View Attached Media ({os.path.basename(file_path)})"):
                 if mime_type in ['.jpg', '.jpeg', '.png']:
                     st.image(file_path, caption="Therapist Media", use_column_width=True)
                 elif mime_type in ['.mp4', '.mov']:
