@@ -1,11 +1,12 @@
-# views/planner.py (UPDATED)
+# views/planner.py (UPDATED for import fix)
 import streamlit as st
 from datetime import date
-from database import save_plan, get_data # Import get_data
+from database import save_plan, get_data # Simple import works since database.py is now in 'views'
+import pandas as pd
 
 def show_page():
     st.header("📅 Daily Session Plan")
-    st.info("Plan the structure of the daily session. This form replaces 'Daily Session Plan.csv'.")
+    st.info("Plan the structure of the daily session.")
 
     # Form to capture all planning inputs from Daily Session Plan.csv
     with st.form("session_plan_form"):
@@ -27,7 +28,6 @@ def show_page():
         st.divider()
         st.subheader("Core Session Blocks")
 
-        # Session blocks based on your spreadsheet columns
         warm_up = st.text_area("Warm-Up Activity", 
                                placeholder="e.g., 10 min obstacle course (Gross Motor focus)", 
                                height=100)
@@ -57,7 +57,6 @@ def show_page():
         submitted = st.form_submit_button("📅 Finalize Daily Plan")
         
         if submitted:
-            # Convert the list of support staff into a single string for storage
             staff_list = ", ".join(support_staff)
             
             save_plan(
@@ -83,7 +82,7 @@ def show_page():
         df_plans = get_data("session_plans")
         st.dataframe(df_plans.sort_values(by="date", ascending=False), use_container_width=True)
         
-        # 2. Export function
+        # Export function
         if not df_plans.empty:
             csv_export = df_plans.to_csv(index=False).encode('utf-8')
             st.download_button(
